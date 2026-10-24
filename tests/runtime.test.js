@@ -23,6 +23,16 @@ test('real server startup, empty database, and idempotent CLI bootstrap', {timeo
   for(let i=0;i<100;i++){if(child.exitCode!==null)throw new Error(`Server exited unexpectedly: ${output}`);try{const r=await fetch(base+'/ready');if(r.ok){ready=true;break;}}catch{}await delay(100);}
   assert(ready,'Server did not become ready');
   assert.equal((await(await fetch(base+'/health')).json()).data.status,'alive');
+  // A bind failure must log the original error and exit, rather than hanging or
+  // emitting an uncaught EventEmitter error outside the startup boundary.
+  await assert.rejects(()=>exec(process.execPath,['server.js'],{env,windowsHide:true,timeout:15000}),error=>{
+    assert.equal(error.code,1);
+    assert.match(error.stderr,/EADDRINUSE/);
+    assert.match(error.stderr,/Server startup failed/);
+    assert.match(error.stderr,/node:net/);
+    assert(!error.stderr.includes(uri));
+    return true;
+  });
   assert.deepEqual((await(await fetch(base+'/api/v1/setup-status')).json()).data,{initializationRequired:true});
   const first=await exec(process.execPath,['src/jobs/bootstrap.js'],{env,windowsHide:true});assert.match(first.stdout,/initialized/);
   const second=await exec(process.execPath,['src/jobs/bootstrap.js'],{env:{...env,ADMIN_PASSWORD:'Should-not-replace-password-123!'},windowsHide:true});assert.match(second.stdout,/Already initialized/);

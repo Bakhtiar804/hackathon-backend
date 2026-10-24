@@ -1,19 +1,3 @@
-import mongoose from "mongoose"
-import dotenv from "dotenv"
-
-dotenv.config()
-
-const connectDb = async () => {
-    try {
-
-        mongoose.connect(process.env.MONGODB_URI);
-        console.log("mongoDb connected");
-        
-    } catch (error) {
-
-        console.log(error);
-        console.log("error MongoDB");
-
-    }
-}
-export default connectDb
+// Compatibility for older imports; use the same awaited, validated connector.
+// Failures propagate to the caller's startup error boundary.
+export { connectDB as default } from '../src/config/db.js';

@@ -1,9 +1,11 @@
-import { connectDB } from '../config/db.js';
-import mongoose from 'mongoose';
-import { ensureIndexes, Company } from '../models/index.js';
-import { setup } from '../validators/index.js';
-import { bootstrapCompany } from '../services/auth.js';
-try {
+import { runStartup } from '../utils/startup.js';
+let mongoose;
+await runStartup('Bootstrap failed',async () => {
+  const { connectDB } = await import('../config/db.js');
+  ({ default:mongoose } = await import('mongoose'));
+  const { ensureIndexes, Company } = await import('../models/index.js');
+  const { setup } = await import('../validators/index.js');
+  const { bootstrapCompany } = await import('../services/auth.js');
   await connectDB();await ensureIndexes();
   if(await Company.exists({_id:'singleton'})) console.log('Already initialized; no accounts changed.');
   else {
@@ -13,4 +15,5 @@ try {
     else if(result.reusedUser) console.log('Company initialized; existing user reused without changing password, role, or account state.');
     else console.log('Company and first Admin initialized.');
   }
-} finally {await mongoose.disconnect();}
+  await mongoose.disconnect();
+},async () => { if(mongoose) await mongoose.disconnect(); });
