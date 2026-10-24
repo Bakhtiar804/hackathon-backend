@@ -30,4 +30,13 @@ test('real server startup, empty database, and idempotent CLI bootstrap', {timeo
   for(const name of ['employees','attendances','leaves','payrolls','announcements'])assert.equal(await mongoose.connection.db.collection(name).countDocuments(),0);
   assert.deepEqual((await(await fetch(base+'/api/v1/setup-status')).json()).data,{initializationRequired:false});
   const login=await fetch(base+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:env.ADMIN_EMAIL,password:env.ADMIN_PASSWORD})});assert.equal(login.status,200);assert((await login.json()).data.token);
+  const beforeRestart=await mongoose.connection.db.collection('users').findOne({email:env.ADMIN_EMAIL});
+  await new Promise(resolve=>{child.once('exit',resolve);child.kill();});
+  child=spawn(process.execPath,['server.js'],{env,stdio:['ignore','pipe','pipe'],windowsHide:true});output='';child.stdout.on('data',c=>output+=c);child.stderr.on('data',c=>output+=c);
+  ready=false;
+  for(let i=0;i<100;i++){if(child.exitCode!==null)throw new Error(`Server restart failed: ${output}`);try{if((await fetch(base+'/ready')).ok){ready=true;break;}}catch{}await delay(100);}
+  assert(ready,'Restarted server did not become ready');
+  assert.deepEqual(await mongoose.connection.db.collection('users').findOne({email:env.ADMIN_EMAIL}),beforeRestart);
+  assert.equal(await mongoose.connection.db.collection('users').countDocuments(),1);
+  assert(!output.includes('E11000'));
 });

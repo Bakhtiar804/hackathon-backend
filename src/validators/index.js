@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { DateTime, IANAZone } from 'luxon';
 import { isoDate } from '../utils/dates.js';
+import { normalizeEmail } from '../utils/email.js';
 export const date = z.string().refine(isoDate, 'Expected strict ISO date YYYY-MM-DD');
 export const id = z.string().regex(/^[a-f\d]{24}$/i);
-export const email = z.email().transform(s => s.toLowerCase());
+export const email = z.string().trim().pipe(z.email()).transform(normalizeEmail);
 export const passwordInput = z.string().min(1).max(128).refine(s => Buffer.byteLength(s,'utf8') <= 72,'Password must not exceed 72 UTF-8 bytes');
 export const password = passwordInput.refine(s => s.length >= 12,'Password must contain at least 12 characters');
 export const text = z.string().trim().min(1).max(2000);
