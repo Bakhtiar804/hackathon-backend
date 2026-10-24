@@ -1,0 +1,13 @@
+# Local verification
+
+Completed on 24 October 2026 using Node.js, npm and an isolated MongoDB 7.0.24 replica set. No application/production database was used and no provider key was needed for tests.
+
+- `npm run check`: all application, job, script and test JavaScript files pass Node syntax checking.
+- `npm test`: **22 passed, 0 failed, 0 skipped**. Integration suite and real HTTP-server/CLI test complete in approximately 35 seconds with the MongoDB binary cached.
+- `npm run docs`: generates the checked-in OpenAPI document directly from actual route and Zod definitions.
+- `git diff --check`: no whitespace errors.
+- Downloaded payslip has an application/pdf response and valid PDF signature. Rendered locally with Poppler and visually checked for readable text, amounts and layout. Test PDF/render live in ignored `tmp/pdfs/`.
+
+Coverage includes concurrent singleton setup; initially empty company data and metrics; mandatory temporary-password change; JWT logout/version revocation; HR linking and linked-user rollback; role and object scopes; CSV dry-run/errors/atomic rollback/formula safety; duplicate attendance races; lateness/half-day boundaries; reconciliation and correction notifications; leave overlap/quota/year-crossing/cancellation; concurrent quota approval; gross/allowances/challenge tax; payroll proration and disjoint deductions; stale-draft detection and immutable finalization; zero-working-day months; scoped analytics; prospective policy/salary history; actual hosted-compatible function-call request/response dispatch through a local provider mock; AI safe fallback; failed-login limiting; real `server.js` readiness and idempotent `bootstrap.js` execution.
+
+The live paid/hosted AI provider was not called. Set your provider URL/model/key to enable it; the same HTTP integration is exercised by the local mock. Docker Compose was provided for local database setup; the local verification used mongodb-memory-server instead of Docker. No deployment or frontend was requested or performed. Optional camera, facial matching and risk/anomaly bonus features are excluded.
