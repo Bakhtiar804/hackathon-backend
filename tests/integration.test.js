@@ -32,9 +32,10 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
   t.after(async()=>{t.mock.timers.reset();await mongoose.disconnect();await db.stop();});
   t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-02T05:00:00Z')});
   let admin,hr,employee,second,departmentId,designationId,employeeId,secondId,hrId;
-  await t.test('liveness, readiness, restrictive CORS and public setup status',async()=>{
+  await t.test('liveness, readiness, open CORS and public setup status',async()=>{
     assert.equal((await api.get('/health')).status,200);assert.equal((await api.get('/ready')).status,200);
-    assert.equal((await api.get('/health').set('Origin','https://evil.example')).status,403);
+    const cors=await api.get('/health').set('Origin','https://evil.example');
+    assert.equal(cors.status,200);assert.equal(cors.headers['access-control-allow-origin'],'https://evil.example');
     assert.deepEqual((await call('get','/setup-status')).body.data,{initializationRequired:true});
     assert.equal((await call('get','/employees')).status,401);
   });

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "bootstrap": "node src/jobs/bootstrap.js",
+    "reset-admin": "node src/jobs/reset-admin.js",
     "reconcile": "node src/jobs/reconcile.js",
     "docs": "node scripts/generate-docs.js",
     "check": "node scripts/check.js",
@@ -45,3 +46,4 @@
     "supertest": "^7.3.1"
   }
 }
+

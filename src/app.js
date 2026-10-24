@@ -1,13 +1,13 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
-import cors from 'cors';
+import { frontendCors } from './middleware/cors.js';
 import rateLimit from 'express-rate-limit';
 import pino from 'pino';
 import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
 import { env } from './config/env.js';
-import { AppError, ok } from './utils/errors.js';
+import { ok } from './utils/errors.js';
 import { router } from './routes/index.js';
 import { openapi } from './utils/openapi.js';
 export const logger=pino({level:env.LOG_LEVEL,redact:['password','passwordHash','token','authorization','AI_API_KEY']});
@@ -15,8 +15,8 @@ export const app=express();
 app.disable('x-powered-by');
 app.use((req,res,next)=>{req.id=randomUUID();res.set('X-Request-Id',req.id);const start=Date.now();res.on('finish',()=>logger.info({requestId:req.id,method:req.method,path:req.path,status:res.statusCode,durationMs:Date.now()-start},'request'));next();});
 app.use(helmet());
-const allowed=env.CORS_ORIGINS.split(',').map(s=>s.trim()).filter(Boolean);
-app.use(cors({origin:(origin,cb)=>cb(origin&&!allowed.includes(origin)?new AppError(403,'Origin not allowed'):null,true),credentials:false}));
+
+app.use(frontendCors());
 app.use(express.json({limit:'1mb'}));
 app.use(rateLimit({windowMs:60000,limit:300,standardHeaders:'draft-8',legacyHeaders:false,message:{success:false,message:'Rate limit exceeded'}}));
 app.get('/health',(req,res)=>ok(res,{status:'alive'}));

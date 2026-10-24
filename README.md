@@ -6,7 +6,7 @@ JavaScript ES modules, Node.js 22+, Express 5, MongoDB/Mongoose, JWT, bcrypt, Zo
 
 1. Install Node.js 22+ and Docker (or provide a MongoDB Atlas replica set).
 2. `npm ci`
-3. Copy `.env.example` to `.env`, configure a random `JWT_SECRET` of at least 32 characters and your permitted frontend origins. Existing `.env` files have been preserved; update their configuration for this backend. The application reads `.env`, not `.env.local`.
+3. Copy `.env.example` to `.env`, configure a random `JWT_SECRET` of at least 32 characters for this backend. Browser origins are allowed by the current CORS middleware. Existing `.env` files have been preserved; update their configuration for this backend. The application reads `.env`, not `.env.local`.
 4. `docker compose up -d --wait` starts a local single-node MongoDB replica set. The database port is bound to localhost. For hosted deployment, use an authenticated Atlas URI and HTTPS.
 5. `npm start` (port 8000 by default). `GET /health` checks liveness; `GET /ready` checks the database.
 6. Call `GET /api/v1/setup-status`, then `POST /api/v1/setup` with `{"companyName":"My Company","email":"admin@example.com","password":"a-strong-unique-password"}`. Setup creates policy defaults and one Admin only. Setup is protected against races by a singleton unique key plus transaction. There is no public registration or reset endpoint that bypasses Admin authorization.
@@ -48,6 +48,31 @@ The legacy `config/db.js` and `config/cloudinary.js` were preserved as existing 
 
 ## Operational notes
 
-Set exact `CORS_ORIGINS` (comma separated; no wildcards), HTTPS at your reverse proxy, and a unique strong JWT secret. CORS limits browser origins; it is not an authentication mechanism. Proxy trust is disabled by default; rate limiting uses the socket peer IP. Configure trusted proxy hops in `src/app.js` only if your deployment requires it. The provided rate limits are process-local; use one API process for the hackathon, or replace the limiter store with a shared store before horizontal scaling. Business transactions serialize on the singleton company to prioritize correctness at hackathon scale. Graceful shutdown waits for in-flight HTTP requests and closes MongoDB. Logs contain method/path/status/request ID, never request bodies or authorization headers.
+The API allows browser requests from any origin; credentials are not enabled. CORS is not an authentication mechanism. Use HTTPS at your reverse proxy and a unique strong JWT secret. Proxy trust is disabled by default; rate limiting uses the socket peer IP. Configure trusted proxy hops in `src/app.js` only if your deployment requires it. The provided rate limits are process-local; use one API process for the hackathon, or replace the limiter store with a shared store before horizontal scaling. Business transactions serialize on the singleton company to prioritize correctness at hackathon scale. Graceful shutdown waits for in-flight HTTP requests and closes MongoDB. Logs contain method/path/status/request ID, never request bodies or authorization headers.
 
 Startup always prints safe phase markers: environment validation, MongoDB connection, index checks, and the HTTP listener. Fatal startup/job errors print their original error name, message, stack, code, and available nested MongoDB DNS/TLS/socket errors to stderr via `console.error`, even with `LOG_LEVEL=silent`. Connection strings and environment credentials are redacted; validation remains enabled. The server exits nonzero after closing resources. It binds `0.0.0.0` on Render's `PORT` and rejects port-binding failures. Required environment variables are `MONGODB_URI` (mongodb:// or mongodb+srv://) and `JWT_SECRET` (at least 32 characters); `LOG_LEVEL` must be a supported Pino level. A database selection failure normally appears after the configured 10-second connection timeout. Use the last phase and sanitized exception to diagnose the failure rather than logging the URI or resetting records. Startup never seeds users automatically.
+
+## Frontend connection and offline Admin recovery
+
+The Vite frontend uses `https://hackathon-backend-d180.onrender.com/api/v1`. The current `src/middleware/cors.js` uses `origin: true`: it reflects any requesting browser origin and does not read an origin allowlist. **No CORS environment variable is required by this version.** `CORS_ORIGINS` has been removed from the environment schema and example; setting that old variable has no effect after this code is deployed. Cookies/browser credentials remain disabled. Permitted headers are Authorization and Content-Type; methods are GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS. Protected API routes still require valid Bearer authentication and role checks.
+
+Render must deploy these source changes; editing a local `.env` or setting `CORS_ORIGINS` alone does not install the new middleware. The older deployed code currently returns HTTP 403 `Origin not allowed` for the local frontend origins. If temporarily retaining that older allowlist implementation, its exact variable is `CORS_ORIGINS`, with this comma-separated value (add the exact HTTPS production frontend origin when known):
+
+```dotenv
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174
+```
+
+That value is for the older allowlist code only, not a requirement of the current all-origin middleware. Keep the existing MONGODB_URI and JWT_SECRET unchanged; do not reset/recreate the database. Use `npm start` on Render and redeploy the intended backend commit. Setup status, setup and login remain public; business routes keep authentication. After deployment verify `/api/v1/setup-status` with the actual frontend Origin header returns 200, echoes that Origin in Access-Control-Allow-Origin, and contains a boolean `data.initializationRequired`. Open Create Workspace only when true; do not submit it merely to verify deployment.
+
+No seeded Admin credentials are provided. `server.js` never automatically bootstraps a company or changes existing users. If setup-status is true, create the first company using the frontend as an authorized operator. If setup-status is false, use the Admin email/password selected during its setup or explicit bootstrap.
+
+For an existing Admin whose password is unknown, an operator with access to the backend environment can run:
+
+```sh
+npm run reset-admin -- --email existing-admin@example.com
+```
+
+First verify the configured database is the intended installation. The interactive command asks for explicit confirmation and prompts twice for the new password without echo; passwords are never accepted as CLI arguments. It uses the same validator, bcrypt cost 12, tokenVersion increment and transactional Session deletion as normal password changes. It audits the reset without password values, preserves role/activation/profile/company data, and refuses to create or promote an account. It fails when the company is uninitialized. All old sessions are revoked; sign in again afterward. There is deliberately no public reset endpoint. The command is not run automatically at startup, deployment, or testing against the configured database.
+
+`tests/connection-recovery.test.js` exercises CORS, public/protected route separation, and recovery solely against an ephemeral MongoDB replica set. Existing tests cover setup races, role lifecycle, linked HR profiles, CSV, attendance/leave, payroll and AI fallbacks. Tests override the configured MongoDB URI before importing the application.
+
