@@ -27,15 +27,15 @@ function hiddenQuestion(label) {
 
 let mongoose;
 await runStartup('Admin recovery failed', async () => {
-  const { values } = parseArgs({ options: { email: { type: 'string' }, help: { type: 'boolean' } }, strict: true });
-  if (values.help) { console.log('Usage: npm run reset-admin -- --email admin@example.com\nRun in an interactive terminal. Passwords are prompted without echo. Check the configured MONGODB_URI before proceeding.'); return; }
-  if (!values.email) throw new Error('Supply the existing Admin email: npm run reset-admin -- --email admin@example.com');
+  const { values } = parseArgs({ options: { workspace: { type: 'string' }, email: { type: 'string' }, help: { type: 'boolean' } }, strict: true });
+  if (values.help) { console.log('Usage: npm run reset-admin -- --workspace my-company --email admin@example.com\nRun in an interactive terminal. Passwords are prompted without echo. Check the configured MONGODB_URI before proceeding.'); return; }
+  if (!values.email) throw new Error('Supply the existing Admin email: npm run reset-admin -- --workspace my-company --email admin@example.com');
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Run recovery in an interactive terminal. Passwords are never accepted as command-line arguments or printed.');
   const { email, password } = await import('../validators/index.js');
   const adminEmail = email.parse(values.email);
   console.log('This explicitly resets one existing Admin in the database configured by MONGODB_URI and revokes all of their sessions. It never creates a company or account. Verify the target database configuration before continuing.');
   const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  const confirmation = await new Promise(resolve => prompt.question(`Type RESET ${adminEmail} to continue: `, resolve));
+  const confirmation = await new Promise(resolve => prompt.question(`Type RESET ${adminEmail} to continue (workspace: ${values.workspace || 'unique matching account'}): `, resolve));
   prompt.close();
   if (confirmation !== `RESET ${adminEmail}`) throw new Error('Recovery cancelled; no password was changed');
   let newPassword = password.parse(await hiddenQuestion('New Admin password (hidden): '));
@@ -46,7 +46,8 @@ await runStartup('Admin recovery failed', async () => {
   const { resetAdminPassword } = await import('../services/admin-recovery.js');
   try {
     await connectDB();
-    const result = await resetAdminPassword({ email: adminEmail, newPassword });
+    const result = await resetAdminPassword({ email: adminEmail, newPassword, workspaceSlug: values.workspace });
     console.log(result.active ? 'Admin password updated; all previous sessions revoked. Sign in with the new password.' : 'Password updated and sessions revoked; this Admin remains inactive. Recovery did not change account activation.');
   } finally { newPassword = ''; repeat = ''; await mongoose.disconnect(); }
 }, async () => { if (mongoose) await mongoose.disconnect(); });
+

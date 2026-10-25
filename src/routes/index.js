@@ -29,12 +29,13 @@ const add=(method,path,summary,access,schema,fn,query=false)=>{
 };
 const all=['Admin','HR','Employee'],staff=['Admin','HR'];
 const loginLimiter=rateLimit({windowMs:15*60000,limit:10,skipSuccessfulRequests:true,standardHeaders:'draft-8',legacyHeaders:false,message:{success:false,message:'Too many authentication attempts; try again later'}});
-router.use(['/auth/login','/setup'],loginLimiter);
-add('get','/setup-status','Whether initial setup is required','public',null,async()=>({initializationRequired:!await Company.exists({_id:'singleton'})}));
+router.use(['/auth/login','/setup','/workspaces'],loginLimiter);
+add('get','/setup-status','Whether initial setup is required','public',null,async()=>({initializationRequired:!await Company.exists({}),workspaceCreationAvailable:true}));
+add('post','/workspaces','Create an independent workspace and its first Admin','public',v.workspace,r=>auth.createWorkspace(r.validated.body));
 add('post','/setup','Create company and first Admin atomically','public',v.setup,r=>auth.setupCompany(r.validated.body));
-add('post','/auth/login','Login and obtain an 8-hour JWT','public',z.object({email:v.email,password:v.passwordInput}).strict(),r=>auth.login(r.validated.body));
+add('post','/auth/login','Login and obtain an 8-hour JWT','public',z.object({email:v.email,password:v.passwordInput,workspaceSlug:v.workspaceSlug.optional()}).strict(),r=>auth.login(r.validated.body));
 router.use(authenticate);
-add('get','/auth/me','Current authenticated user',all,null,r=>auth.publicUser(r.actor));
+add('get','/auth/me','Current authenticated user',all,null,r=>auth.sessionUser(r.actor));
 add('post','/auth/logout','Invalidate this token session',all,z.object({}).strict(),async r=>{await Session.deleteOne({_id:r.sessionId,userId:r.actor._id});return {loggedOut:true};});
 add('post','/auth/change-password','Change password and revoke all sessions',all,z.object({currentPassword:v.passwordInput,newPassword:v.password}).strict(),r=>auth.changePassword(r.actor,r.validated.body));
 add('get','/organization','Organization settings and configuration',staff,null,r=>org.getOrganization(r.actor));
@@ -83,3 +84,5 @@ router.use('/ai',rateLimit({windowMs:3600000,limit:20,keyGenerator:r=>String(r.a
 add('post','/ai/chat','Read-only tool-calling AI assistant',all,z.object({message:v.text}).strict(),r=>aiRequest(r.actor,'chat',r.validated.body));
 add('post','/ai/summary','AI summary of server-computed dashboard',staff,z.object({filters:v.filters.optional()}).strict(),r=>aiRequest(r.actor,'summary',r.validated.body));
 add('post','/ai/smart-leave','Parse leave proposal; never submits',['HR','Employee'],z.object({message:v.text}).strict(),r=>aiRequest(r.actor,'smart-leave',r.validated.body));
+
+

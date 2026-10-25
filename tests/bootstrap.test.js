@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from './legacy-test-context.js';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -70,7 +70,7 @@ test('bootstrap preserves unique email and existing accounts across retries and 
         inserted = true;
         // Another writer commits after bootstrap's lookup but before its insert.
         // This is a real unique-index collision, not a mocked duplicate error.
-        await User.collection.insertOne({ email:'bakhtiar@gmail.com', passwordHash, role:'Employee', active:false, mustChangePassword:true, tokenVersion:9 });
+        await User.collection.insertOne({ workspaceId:'singleton', email:'bakhtiar@gmail.com', passwordHash, role:'Employee', active:false, mustChangePassword:true, tokenVersion:9 });
       }
       return originalCreate.apply(this,args);
     });
@@ -90,3 +90,4 @@ test('bootstrap preserves unique email and existing accounts across retries and 
     } finally { createMock.mock.restore(); }
   });
 });
+

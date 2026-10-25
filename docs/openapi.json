@@ -49,6 +49,237 @@
         }
       }
     },
+    "/api/v1/workspaces": {
+      "post": {
+        "summary": "Create an independent workspace and its first Admin",
+        "description": "Allowed roles: public. See docs/API.md for business semantics and response data.",
+        "security": [],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "companyName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "workspaceSlug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "policy": {
+                    "type": "object",
+                    "properties": {
+                      "timezone": {
+                        "default": "Asia/Karachi",
+                        "type": "string"
+                      },
+                      "officeStart": {
+                        "default": "09:00",
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                      },
+                      "officeEnd": {
+                        "default": "18:00",
+                        "type": "string",
+                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                      },
+                      "graceMinutes": {
+                        "default": 15,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 120
+                      },
+                      "halfDayHours": {
+                        "default": 5,
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 24
+                      },
+                      "weekendDays": {
+                        "default": [
+                          6,
+                          7
+                        ],
+                        "maxItems": 7,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 7
+                        }
+                      },
+                      "officeLatitude": {
+                        "default": 0,
+                        "type": "number",
+                        "minimum": -90,
+                        "maximum": 90
+                      },
+                      "officeLongitude": {
+                        "default": 0,
+                        "type": "number",
+                        "minimum": -180,
+                        "maximum": 180
+                      },
+                      "geofenceRadius": {
+                        "default": 150,
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 10000
+                      },
+                      "leaveTypes": {
+                        "default": [
+                          {
+                            "name": "annual",
+                            "quota": 14,
+                            "paid": true,
+                            "active": true
+                          },
+                          {
+                            "name": "sick",
+                            "quota": 8,
+                            "paid": true,
+                            "active": true
+                          },
+                          {
+                            "name": "casual",
+                            "quota": 10,
+                            "paid": true,
+                            "active": true
+                          },
+                          {
+                            "name": "unpaid",
+                            "quota": null,
+                            "paid": false,
+                            "active": true
+                          }
+                        ],
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z_]{1,30}$"
+                            },
+                            "quota": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "paid": {
+                              "type": "boolean"
+                            },
+                            "active": {
+                              "default": true,
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "quota",
+                            "paid"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "holidays": {
+                        "default": [],
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "date": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2000
+                            },
+                            "active": {
+                              "default": true,
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "date",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "companyName",
+                  "workspaceSlug",
+                  "email",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication/session invalid"
+          },
+          "403": {
+            "description": "Role, ownership or mandatory password restriction"
+          },
+          "409": {
+            "description": "Duplicate or state conflict"
+          },
+          "422": {
+            "description": "Validation or business rule failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Failure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/setup": {
       "post": {
         "summary": "Create company and first Admin atomically",
@@ -294,6 +525,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  },
+                  "workspaceSlug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
                   }
                 },
                 "required": [

@@ -33,12 +33,12 @@ test('real server startup, empty database, and idempotent CLI bootstrap', {timeo
     assert(!error.stderr.includes(uri));
     return true;
   });
-  assert.deepEqual((await(await fetch(base+'/api/v1/setup-status')).json()).data,{initializationRequired:true});
+  assert.deepEqual((await(await fetch(base+'/api/v1/setup-status')).json()).data,{initializationRequired:true,workspaceCreationAvailable:true});
   const first=await exec(process.execPath,['src/jobs/bootstrap.js'],{env,windowsHide:true});assert.match(first.stdout,/initialized/);
   const second=await exec(process.execPath,['src/jobs/bootstrap.js'],{env:{...env,ADMIN_PASSWORD:'Should-not-replace-password-123!'},windowsHide:true});assert.match(second.stdout,/Already initialized/);
   await mongoose.connect(uri);const users=await mongoose.connection.db.collection('users').find().toArray();assert.equal(users.length,1);assert(await bcrypt.compare(env.ADMIN_PASSWORD,users[0].passwordHash));
   for(const name of ['employees','attendances','leaves','payrolls','announcements'])assert.equal(await mongoose.connection.db.collection(name).countDocuments(),0);
-  assert.deepEqual((await(await fetch(base+'/api/v1/setup-status')).json()).data,{initializationRequired:false});
+  assert.deepEqual((await(await fetch(base+'/api/v1/setup-status')).json()).data,{initializationRequired:false,workspaceCreationAvailable:true});
   const login=await fetch(base+'/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:env.ADMIN_EMAIL,password:env.ADMIN_PASSWORD})});assert.equal(login.status,200);assert((await login.json()).data.token);
   const beforeRestart=await mongoose.connection.db.collection('users').findOne({email:env.ADMIN_EMAIL});
   await new Promise(resolve=>{child.once('exit',resolve);child.kill();});
@@ -50,3 +50,4 @@ test('real server startup, empty database, and idempotent CLI bootstrap', {timeo
   assert.equal(await mongoose.connection.db.collection('users').countDocuments(),1);
   assert(!output.includes('E11000'));
 });
+

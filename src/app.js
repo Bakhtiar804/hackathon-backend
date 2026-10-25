@@ -27,10 +27,11 @@ app.use((req,res)=>res.status(404).json({success:false,message:'Endpoint not fou
 app.use((err,req,res,next)=>{
   let status=err.status||500,message=status<500?err.message:'An unexpected error occurred',errors=err.errors;
   if(err instanceof ZodError){status=422;message='Validation failed';errors=err.issues.map(i=>({field:i.path.join('.'),reason:i.message}));}
-  if(err.code===11000){status=409;message='Record already exists';errors=undefined;}
+  if(err.code===11000){status=409;message='Record already exists in this workspace';errors=undefined;if(err.keyPattern?.slug){message='Workspace address is already in use';errors=[{field:'workspaceSlug',reason:'Choose a different workspace address.'}];}}
   if(err.name==='CastError'){status=422;message='Invalid identifier';errors=undefined;}
   if(err.type==='entity.parse.failed'){status=400;message='Invalid JSON';errors=undefined;}
   if(err.type==='entity.too.large'){status=413;message='Request body too large';errors=undefined;}
   if(status>=500)logger.error({requestId:req.id,errorType:err.name,code:err.code},'request failed');
   res.status(status).json({success:false,message,...(status<500&&errors&&{errors}),requestId:req.id});
 });
+

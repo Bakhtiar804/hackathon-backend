@@ -64,7 +64,7 @@ export async function cancelLeave(actor,id) {
 }
 export async function listLeave(actor,f) {
   const q={}; if(actor.role==='Employee') q.employeeId=actor.employeeId||null; else if(f.employeeId) q.employeeId=f.employeeId;
-  if(f.departmentId && actor.role!=='Employee') { const {Employee}=await import('../models/index.js'); q.employeeId={$in:(await Employee.find({departmentId:f.departmentId})).map(e=>e._id)}; }
+  if(f.departmentId && actor.role!=='Employee') { const {Employee}=await import('../models/index.js'); q.employeeId={$in:(await Employee.find({departmentId:f.departmentId,...(f.employeeId?{_id:f.employeeId}:{})})).map(e=>e._id)}; }
   if(f.state) q.state=f.state;
   if(f.from) q.end={$gte:f.from}; if(f.to) q.start={$lte:f.to};
   const [items,total]=await Promise.all([Leave.find(q).sort({createdAt:-1}).skip((f.page-1)*f.limit).limit(f.limit),Leave.countDocuments(q)]); return {items,total,page:f.page,limit:f.limit};

@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from './legacy-test-context.js';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
@@ -36,7 +36,7 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     assert.equal((await api.get('/health')).status,200);assert.equal((await api.get('/ready')).status,200);
     const cors=await api.get('/health').set('Origin','https://evil.example');
     assert.equal(cors.status,200);assert.equal(cors.headers['access-control-allow-origin'],'https://evil.example');
-    assert.deepEqual((await call('get','/setup-status')).body.data,{initializationRequired:true});
+    assert.deepEqual((await call('get','/setup-status')).body.data,{initializationRequired:true,workspaceCreationAvailable:true});
     assert.equal((await call('get','/employees')).status,401);
   });
   await t.test('concurrent setup creates exactly one company and Admin, zero business activity',async()=>{
@@ -44,7 +44,7 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     const responses=await Promise.all([call('post','/setup',null,body),call('post','/setup',null,body)]);
     assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);assert.equal(await User.countDocuments(),1);
     assert.equal(await Employee.countDocuments(),0);assert.equal(await Attendance.countDocuments(),0);assert.equal(await Leave.countDocuments(),0);assert.equal(await Payroll.countDocuments(),0);
-    assert.deepEqual((await call('get','/setup-status')).body.data,{initializationRequired:false});admin=(await login('admin@example.com')).token;
+    assert.deepEqual((await call('get','/setup-status')).body.data,{initializationRequired:false,workspaceCreationAvailable:true});admin=(await login('admin@example.com')).token;
     const d=(await call('get','/dashboard',admin)).body.data;assert.equal(d.headcount,0);assert.equal(d.payroll.grossMinor,0);assert.equal(d.attendanceRate,0);
   });
   await t.test('create HR, force password change, and revoke old token',async()=>{
@@ -79,6 +79,14 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     assert.equal((await call('patch','/employees/me',employee,{name:'Changed'})).status,403);
     assert.equal((await call('patch','/employees/me',employee,{phone:'123',address:'Home'})).status,200);
     assert.equal((await call('get','/employees?search=Test&limit=1',hr)).body.data.items.length,1);
+    assert.equal((await call('get','/employees?search=test',hr)).body.data.total,3);
+    assert.equal((await call('get','/employees?search=Person',hr)).body.data.total,0);
+    assert.equal((await call('get','/employees?search=E00',hr)).body.data.total,2);
+    assert.equal((await call('get','/employees?search=one%40',hr)).body.data.total,1);
+    assert.equal((await call('get','/employees?search=%5B',hr)).body.data.total,0);
+    assert.equal((await call('get','/analytics/search_employees?search=Person',hr)).body.data.total,0);
+    const prefixExport=await call('get','/employees/export?search=one%40',hr);
+    assert.equal(prefixExport.status,200);assert(prefixExport.text.includes('one@example.com'));assert(!prefixExport.text.includes('two@example.com'));
     const d=(await call('get','/dashboard',employee)).body.data;assert.equal(d.headcount,1);assert(!JSON.stringify(d).includes('two@example.com'));
     await assert.rejects(()=>runTool(awaitActor(employeeId),'get_payroll_summary',{}));
   });
@@ -97,6 +105,9 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     const attempts=await Promise.all([call('post','/attendance/check-in',employee,{}),call('post','/attendance/check-in',employee,{})]);assert.deepEqual(attempts.map(r=>r.status).sort(),[200,409]);
     const a=await Attendance.findOne({employeeId,date:'2026-11-02'});assert.equal(a.status,'open');assert.equal(a.late,true);assert.equal(await Attendance.countDocuments({employeeId,date:'2026-11-02'}),1);
     assert.equal((await call('post','/attendance/check-in',second,{employeeId})).status,422);
+    const liveDay=await call('get','/dashboard?from=2026-11-02&to=2026-11-02',employee);
+    assert.equal(liveDay.body.data.attendance.open,1);assert.equal(liveDay.body.data.attendanceRate,0);
+    assert.equal(liveDay.body.data.attendance.absent,0);
     const closed=await call('post','/attendance/check-out',employee,{});assert.equal(closed.body.data.status,'half_day');assert.equal(closed.body.data.late,true);
     assert.equal((await call('post','/attendance/check-out',employee,{})).status,409);
     assert.equal((await call('post','/attendance/check-out',second,{})).status,409);
@@ -136,6 +147,9 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     const r=await call('post','/leaves',employee,{type:'annual',start:'2026-12-31',end:'2027-01-04',reason:'Year crossing'});assert.equal(r.status,200);assert.deepEqual(r.body.data.days.map(d=>d.year),[2026,2027,2027]);
     assert.equal((await call('post',`/leaves/${r.body.data._id}/decision`,hr,{decision:'approved',comment:'Approved'})).status,200);
     assert.equal((await call('get','/leaves/balances/me?year=2027',employee)).body.data.types.find(t=>t.type==='annual').used,2);
+    const combined=await call('get',`/leaves?employeeId=${employeeId}&departmentId=${departmentId}`,hr);
+    assert(combined.body.data.total>0);assert(combined.body.data.items.every(row=>row.employeeId===employeeId));
+    const mismatch=await call('get',`/leaves?employeeId=${employeeId}&departmentId=aaaaaaaaaaaaaaaaaaaaaaaa`,hr);assert.equal(mismatch.body.data.total,0);
   });
   await t.test('payroll formulas, drafts, scope, stale check, Admin finalization and immutable snapshots',async()=>{
     const r=await call('post','/payroll',hr,{month:'2026-09'});assert.equal(r.status,200,JSON.stringify(r.body));const runId=r.body.data._id,slip=r.body.data.slips.find(s=>s.employeeId===employeeId);
@@ -156,6 +170,12 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     const a=await call('get','/analytics/get_headcount',hr);assert.equal(a.body.data.headcount,4);
     assert.equal((await call('get','/analytics/get_headcount',employee)).status,403);
     const self=await call('get','/analytics/get_attendance_summary',employee);assert.equal(self.body.data.attendance.half_day,1);
+    const ownDashboard=await call('get','/dashboard',employee);
+    const weeklyExpected=(await Attendance.find({employeeId,date:{$gte:ownDashboard.body.data.weeklyFrom,$lte:ownDashboard.body.data.weeklyTo}}).lean()).reduce((sum,row)=>sum+(row.minutes||0),0)/60;
+    assert.equal(ownDashboard.body.data.weeklyHoursWorked,weeklyExpected);
+    assert.equal(ownDashboard.body.data.weeklyFrom,'2026-11-02');
+    const historicalSelf=await call('get','/dashboard?from=2026-10-01&to=2026-10-01',employee);
+    assert.equal(historicalSelf.body.data.weeklyHoursWorked,weeklyExpected);
     assert.equal((await call('get','/dashboard?from=2026-11-03&to=2026-11-04',hr)).status,422);
   });
   await t.test('prospective settings and salary history preserve old attendance and payroll',async()=>{
@@ -221,3 +241,4 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     assert.equal(last.status,429);assert(messages.every(m=>m==='Invalid email or password'));
   });
 });
+

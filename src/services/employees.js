@@ -54,7 +54,7 @@ export function employeeQuery(actor,f={},date) {
   const q={}; if(actor.role==='Employee') q._id=actor.employeeId || null;
   for(const k of ['departmentId','designationId']) if(f[k]) q[k]=f[k];
   if(f.status) q.$expr={$eq:[{$let:{vars:{history:{$arrayElemAt:[{$filter:{input:'$employmentHistory',as:'h',cond:{$lte:['$$h.effectiveDate',date]}}},-1]}},in:{$ifNull:['$$history.status','$status']}}},f.status]};
-  if(f.search) { const re=new RegExp(f.search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'); q.$or=[{name:re},{code:re},{email:re}]; } return q;
+  if(f.search) { const re=new RegExp('^'+f.search.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'); q.$or=[{name:re},{code:re},{email:re}]; } return q;
 }
 export async function listEmployees(actor,f) {
   const c=await company(),date=today(currentPolicy(c).timezone),q=employeeQuery(actor,f,date); const [data,total]=await Promise.all([Employee.find(q).sort(f.sort).skip((f.page-1)*f.limit).limit(f.limit).lean(),Employee.countDocuments(q)]);
@@ -62,7 +62,7 @@ export async function listEmployees(actor,f) {
 }
 export async function employee360(actor,id) {
   const e=await scopeEmployee(actor,id); const [attendance,leaves,runs]=await Promise.all([Attendance.find({employeeId:e._id}).sort({date:-1}).limit(31),Leave.find({employeeId:e._id}).sort({createdAt:-1}).limit(20),Payroll.find({state:'finalized','slips.employeeId':String(e._id)}).sort({month:-1}).limit(12)]);
-  return {employee:e,attendance,leaves,payslips:runs.map(r=>({runId:r._id,month:r.month,...r.slips.find(s=>s.employeeId===String(e._id))}))};
+  return {employee:e,attendance,leaves,payslips:runs.map(r=>({runId:r._id,month:r.month,state:r.state,...r.slips.find(s=>s.employeeId===String(e._id))}))};
 }
 export async function importCSV(actor,csv,dryRun) {
   roles(actor,'HR'); let rows;

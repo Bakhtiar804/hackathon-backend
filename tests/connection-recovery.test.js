@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from './legacy-test-context.js';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +56,16 @@ test('offline Admin recovery hashes securely, revokes sessions, and never create
   assert.equal(await Session.countDocuments({ userId: setup.user.id }), 0);
   assert.equal((await api.get('/api/v1/auth/me').set('Authorization', `Bearer ${oldLogin.token}`)).status, 401);
   await assert.rejects(() => login({ email: 'admin@example.com', password: oldPassword }), /Invalid email or password/);
-  assert((await login({ email: 'admin@example.com', password: newPassword })).token);
+  const restored = await login({ email: 'admin@example.com', password: newPassword });
+  assert(restored.token);
+  assert.equal(restored.user.workspace.timezone, 'Asia/Karachi');
+  assert.equal(restored.user.workspace.name, 'Isolated Recovery');
+  assert(Array.isArray(restored.user.workspace.policies));
+  assert(Array.isArray(restored.user.workspace.units));
+  assert(!JSON.stringify(restored.user.workspace).includes('officeLatitude'));
+  const me = await api.get('/api/v1/auth/me').set('Authorization', `Bearer ${restored.token}`);
+  assert.equal(me.status, 200);
+  assert.equal(me.body.data.workspace.timezone, 'Asia/Karachi');
   const audit = await Audit.findOne({ action: 'admin_password_reset_cli' }).lean();
   assert(audit);
   assert(!JSON.stringify(audit).includes(newPassword));
@@ -68,3 +77,5 @@ test('offline Admin recovery hashes securely, revokes sessions, and never create
   assert.equal(await User.countDocuments(), 2);
   assert.equal(await Company.countDocuments(), 1);
 });
+
+

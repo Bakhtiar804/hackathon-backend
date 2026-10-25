@@ -4,6 +4,8 @@
   "description": "HCM Lite HR, attendance, leave, payroll and tool-calling AI API",
   "main": "server.js",
   "scripts": {
+    "inspect-account": "node src/jobs/inspect-account.js",
+    "migrate-workspaces": "node src/jobs/migrate-workspaces.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "bootstrap": "node src/jobs/bootstrap.js",
     "reset-admin": "node src/jobs/reset-admin.js",
@@ -11,13 +13,16 @@
     "docs": "node scripts/generate-docs.js",
     "check": "node scripts/check.js",
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "check-ai": "node src/jobs/check-ai.js"
   },
   "engines": {
     "node": ">=22"
   },
   "config": {
-    "mongodbMemoryServer": { "version": "7.0.24" }
+    "mongodbMemoryServer": {
+      "version": "7.0.24"
+    }
   },
   "keywords": [],
   "author": "",
@@ -46,4 +51,3 @@
     "supertest": "^7.3.1"
   }
 }
-
