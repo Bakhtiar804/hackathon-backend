@@ -1008,6 +1008,62 @@
         }
       }
     },
+    "/api/v1/organization/departments/configure": {
+      "post": {
+        "summary": "Configure the six supported departments without deleting records",
+        "description": "Allowed roles: Admin. See docs/API.md for business semantics and response data.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication/session invalid"
+          },
+          "403": {
+            "description": "Role, ownership or mandatory password restriction"
+          },
+          "409": {
+            "description": "Duplicate or state conflict"
+          },
+          "422": {
+            "description": "Validation or business rule failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Failure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/organization/units": {
       "post": {
         "summary": "Create department or designation",

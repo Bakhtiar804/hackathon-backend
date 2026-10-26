@@ -75,6 +75,8 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
   await t.test('object authorization, field allowlists and scoped directory',async()=>{
     assert.equal((await call('get',`/employees/${secondId}`,employee)).status,403);
     const own=await call('get','/employees',employee);assert.equal(own.body.data.total,1);assert.equal(own.body.data.items[0]._id,employeeId);
+    const profile=await call('get','/employees/me',employee);assert.equal(profile.status,200);assert.equal(profile.body.data.job.departmentName,'IT / Engineering');assert.equal(profile.body.data.job.designationName,'Engineer');assert.equal(profile.body.data.timezone,'Asia/Karachi');
+    assert.equal((await call('get','/organization',employee)).status,403);
     assert.equal((await call('patch','/employees/me',employee,{basicSalary:999999})).status,422);
     assert.equal((await call('patch','/employees/me',employee,{name:'Changed'})).status,403);
     assert.equal((await call('patch','/employees/me',employee,{phone:'123',address:'Home'})).status,200);
@@ -157,6 +159,7 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     assert.equal((await call('get',`/payslips/${runId}/${employeeId}`,employee)).status,404);
     assert.equal((await call('post',`/payroll/${runId}/finalize`,hr,{})).status,403);
     const finalized=await call('post',`/payroll/${runId}/finalize`,admin,{});assert.equal(finalized.status,200,JSON.stringify(finalized.body));
+    const profile=await call('get',`/employees/${employeeId}`,employee);assert.equal(profile.status,200);assert.equal(profile.body.data.payslips[0].employeeId,employeeId);assert.equal(profile.body.data.payslips[0].state,'finalized');assert.equal(profile.body.data.payslips[0].grossMinor,slip.grossMinor);
     assert.equal((await call('post','/payroll',hr,{month:'2026-09'})).status,409);
     assert.equal((await call('post',`/payroll/${runId}/finalize`,admin,{})).status,409);
     assert.equal((await call('get',`/payslips/${runId}/${secondId}`,employee)).status,403);
@@ -210,19 +213,46 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     const company=await Company.findById('singleton');const {currentPolicy}=await import('../src/utils/dates.js');assert.equal(currentPolicy(company).officeStart,'09:00');
   });
   await t.test('hosted-compatible AI executes tool calls, validates smart leave, and degrades safely',async()=>{
-    let mode='chat',seen=[];
+    let mode='chat',seen=[],invalidSmartResponses=0;
     const provider=http.createServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;const payload=JSON.parse(body);seen.push(payload);res.setHeader('Content-Type','application/json');
       let message;
       if(mode==='error'){res.statusCode=503;return res.end('{"secret":"provider-error-do-not-leak"}');}
-      if(mode==='smart') message={role:'assistant',content:JSON.stringify({type:'casual',start:'2026-11-09',end:'2026-11-10',reason:'Wedding'})};
+      if(mode==='summary') message={role:'assistant',content:JSON.stringify({bullets:['Facts from the selected date range.','Numbers come from saved attendance.','No speculative reasons are included.']})};
+      else if(mode==='smart-invalid' && invalidSmartResponses++===0) message={role:'assistant',content:'not valid JSON'};
+      else if(mode==='smart'||mode==='smart-invalid') message={role:'assistant',content:JSON.stringify({type:'casual',start:'2026-11-09',end:'2026-11-10',reason:'Wedding'})};
+      else if(mode==='department' && !payload.messages.some(m=>m.role==='tool')) message={role:'assistant',content:null,tool_calls:[{id:'dept',type:'function',function:{name:'get_headcount',arguments:JSON.stringify({departmentId})},extra_content:{google:{thought_signature:'test-opaque-signature'}}}]};
       else if(!payload.messages.some(m=>m.role==='tool')) message={role:'assistant',content:null,tool_calls:[{id:'call1',type:'function',function:{name:'get_my_leave_balance',arguments:'{"year":2026}'}}]};
       else message={role:'assistant',content:'AI-generated: your leave balance is based on the authorized tool result.'};
       res.end(JSON.stringify({choices:[{message}]}));
     });await new Promise(resolve=>provider.listen(19443,'127.0.0.1',resolve));
     try {let r=await call('post','/ai/chat',employee,{message:'How much leave remains?'});assert.equal(r.status,200);assert.deepEqual(r.body.data.toolsUsed,['get_my_leave_balance']);assert(seen[1].messages.some(m=>m.role==='tool'));
+      assert(seen[0].tools.every(tool=>['get_attendance_summary','get_leave_summary','get_my_leave_balance'].includes(tool.function.name)));
+      mode='department';r=await call('post','/ai/chat',hr,{message:'Engineering mein kitne active employees hain?'});assert.deepEqual(r.body.data.toolsUsed,['get_headcount']);
+      assert(seen.at(-2).messages[0].content.includes(departmentId));assert(seen.at(-2).messages[0].content.includes('Roman Urdu'));
+      assert.equal(seen.at(-1).messages.find(m=>m.tool_calls)?.tool_calls[0].extra_content.google.thought_signature,'test-opaque-signature');
+      mode='summary';r=await call('post','/ai/summary',hr,{filters:{from:'2026-11-01',to:'2026-11-02',departmentId}});assert.equal(r.body.data.bullets.length,3);assert.equal(seen.at(-1).response_format.json_schema.name,'dashboard_summary');
       mode='smart';const count=await Leave.countDocuments();r=await call('post','/ai/smart-leave',employee,{message:'Wedding next week'});assert.equal(r.body.data.requiresConfirmation,true);assert.equal(await Leave.countDocuments(),count);
+      assert.equal(seen.at(-1).response_format.json_schema.name,'leave_proposal');
+      mode='smart-invalid';r=await call('post','/ai/smart-leave',employee,{message:'Agley Monday aur Tuesday chutti chahiye'});assert.equal(r.body.data.requiresConfirmation,true);assert.equal(invalidSmartResponses,2);assert.equal(await Leave.countDocuments(),count);
       mode='error';r=await call('post','/ai/chat',employee,{message:'Hello'});assert.equal(r.body.data.fallback,true);assert(!JSON.stringify(r.body).includes('provider-error'));assert(await AiLog.countDocuments()>=3);assert.equal(AiLog.collection.name,'ai_logs');
     }finally{await new Promise(resolve=>provider.close(resolve));}
+  });
+  await t.test('six-department catalog is authorized, idempotent and preserves employee references',async()=>{
+    const {DEPARTMENTS}=await import('../src/utils/departments.js');
+    const before=await Employee.countDocuments();
+    await models.OrgUnit.updateOne({_id:departmentId},{$set:{name:'Engineering'}});
+    const legacy=await models.OrgUnit.create({kind:'department',name:'Legacy Support',active:true});
+    assert.equal((await call('post','/employees',hr,{...employeeBody('UNSUPPORTED','unsupported@example.com'),departmentId:String(legacy._id)})).status,422);
+    assert.equal((await call('post','/organization/units',admin,{kind:'department',name:'Random Department'})).status,422);
+    assert.equal((await call('post','/organization/departments/configure',hr,{})).status,403);
+    const configured=await call('post','/organization/departments/configure',admin,{});assert.equal(configured.status,200);
+    assert.deepEqual(configured.body.data.units.filter(unit=>unit.active).map(unit=>unit.name).sort(),[...DEPARTMENTS].sort());
+    assert.equal((await Employee.findById(employeeId)).departmentId.toString(),departmentId);
+    assert.equal((await models.OrgUnit.findById(departmentId)).name,'IT / Engineering');
+    assert.equal((await models.OrgUnit.findById(legacy._id)).active,false);
+    assert.equal(await Employee.countDocuments(),before);
+    const ids=configured.body.data.units.filter(unit=>unit.active).map(unit=>unit._id).sort();
+    const again=await call('post','/organization/departments/configure',admin,{});assert.deepEqual(again.body.data.units.filter(unit=>unit.active).map(unit=>unit._id).sort(),ids);
   });
   await t.test('logout, reset and deactivation invalidate existing sessions; errors contain no secrets',async()=>{
     const extra=(await login('one@example.com')).token;assert.equal((await call('post','/auth/logout',extra,{})).status,200);assert.equal((await call('get','/auth/me',extra)).status,401);

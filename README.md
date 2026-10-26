@@ -13,7 +13,7 @@ JavaScript ES modules, Node.js 22+, Express 5, MongoDB/Mongoose, JWT, bcrypt, Zo
 
 Alternative explicit first-run bootstrap: set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and optionally `COMPANY_NAME`, then `npm run bootstrap`. It does nothing if initialization already happened. Before creating an Admin, bootstrap looks up the trimmed, lowercase email and reuses an existing user without changing their password, role, active state, or sessions. A concurrent duplicate insert is recovered by fetching the existing user outside the aborted transaction and retrying initialization. Existing non-Admin users are never promoted by bootstrap. Startup does **not** run bootstrap automatically. On Render use `npm start` as the start command; if you explicitly run bootstrap before it, repeated bootstrap runs are safe. Keep bootstrap secrets out of version control.
 
-MongoDB transactions are required; standalone `mongod` is deliberately rejected on startup. All indexes are initialized before listening. One installation serves one company. A MongoDB replica set backs both local use and isolated tests.
+MongoDB transactions are required; standalone `mongod` is deliberately rejected on startup. All indexes are initialized before listening. One installation serves multiple isolated workspaces. Existing databases require the preserving migration in [Workspace deployment](docs/WORKSPACES.md) before starting this release. A MongoDB replica set backs both local use and isolated tests.
 
 ## Frontend handoff
 
@@ -62,7 +62,7 @@ Render must deploy these source changes; editing a local `.env` or setting `CORS
 CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174
 ```
 
-That value is for the older allowlist code only, not a requirement of the current all-origin middleware. Keep the existing MONGODB_URI and JWT_SECRET unchanged; do not reset/recreate the database. Use `npm start` on Render and redeploy the intended backend commit. Setup status, setup and login remain public; business routes keep authentication. After deployment verify `/api/v1/setup-status` with the actual frontend Origin header returns 200, echoes that Origin in Access-Control-Allow-Origin, and contains a boolean `data.initializationRequired`. Open Create Workspace only when true; do not submit it merely to verify deployment.
+That value is for the older allowlist code only, not a requirement of the current all-origin middleware. Keep the existing MONGODB_URI and JWT_SECRET unchanged; do not reset/recreate the database. Use `npm start` on Render and redeploy the intended backend commit. Setup status, setup and login remain public; business routes keep authentication. After deployment verify `/api/v1/setup-status` with the actual frontend Origin header returns 200, echoes that Origin in Access-Control-Allow-Origin, and contains a boolean `data.initializationRequired`. Open Create Workspace whenever workspaceCreationAvailable is true, including after another company exists; do not submit it merely to verify deployment.
 
 No seeded Admin credentials are provided. `server.js` never automatically bootstraps a company or changes existing users. If setup-status is true, create the first company using the frontend as an authorized operator. If setup-status is false, use the Admin email/password selected during its setup or explicit bootstrap.
 
@@ -76,3 +76,8 @@ First verify the configured database is the intended installation. The interacti
 
 `tests/connection-recovery.test.js` exercises CORS, public/protected route separation, and recovery solely against an ephemeral MongoDB replica set. Existing tests cover setup races, role lifecycle, linked HR profiles, CSV, attendance/leave, payroll and AI fallbacks. Tests override the configured MongoDB URI before importing the application.
 
+
+
+## Gemini provider
+
+See [Gemini integration](docs/GEMINI.md) for Render AI_API_KEY / AI_BASE_URL / AI_MODEL configuration and npm run check-ai. The selected default provider is Gemini; explicitly configured compatible endpoints remain supported. The diagnostic uses synthetic prompts without database access or company data. Never commit .env or put the key in frontend variables.

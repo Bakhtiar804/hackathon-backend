@@ -195,3 +195,10 @@ Employee hoursWorked follows the selected dashboard range. weeklyHoursWorked is 
 
 
 Attendance rate follows the challenge numerator: present + late + missing_checkout + 0.5 * half_day. An ongoing open session is shown as open, never as completed present attendance; it does not add to that numerator. Missing historical checkout follows the documented day-close treatment. Employee/department leave filters intersect when both are supplied.
+
+
+## Supported department catalog
+
+Departments are limited to IT / Engineering, Human Resources (HR), Finance / Accounts, Sales, Marketing and Operations. Existing known aliases such as Engineering or HR normalize to the canonical name on unit creation/rename. Arbitrary department names and new assignments to unsupported departments return 422; designations remain configurable. Admin POST /organization/departments/configure with {} atomically creates/reuses these six, preserves reused IDs and employee references, and deactivates other legacy units without deleting them. It is idempotent and never runs automatically at setup or startup.
+
+Employee 360 additionally returns safe job {departmentName,designationName} and timezone for the authorized employee; Employee does not need permission to GET /organization. Published payroll reads project only the selected employee’s saved slip.

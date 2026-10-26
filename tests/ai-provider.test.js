@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {providerCompletion,completionUrl,checkAIProvider,GEMINI_BASE_URL,GEMINI_MODEL} from '../src/services/ai-provider.js';
+import {providerCompletion,completionUrl,checkAIProvider,resolveAIConfig,GEMINI_BASE_URL,GEMINI_MODEL} from '../src/services/ai-provider.js';
 const config={AI_API_KEY:' fixture-provider-key ',AI_BASE_URL:GEMINI_BASE_URL+'/',AI_MODEL:GEMINI_MODEL};
 const response=message=>new Response(JSON.stringify({choices:[{message}]}),{headers:{'Content-Type':'application/json'}});
 
@@ -46,4 +46,10 @@ test('Gemini diagnostic verifies tool call, signature round-trip and strict stru
 
 test('diagnostic rejects models that omit the required function call',async()=>{
  await assert.rejects(()=>checkAIProvider(config,async()=>response({role:'assistant',content:'I cannot call tools.'})),{code:'tool_calling_failed'});
+});
+
+test('Gemini is the selected default while an explicit OpenAI endpoint stays compatible',()=>{
+ assert.deepEqual(resolveAIConfig({}),{AI_API_KEY:undefined,AI_BASE_URL:GEMINI_BASE_URL,AI_MODEL:GEMINI_MODEL});
+ assert.equal(resolveAIConfig({AI_BASE_URL:'https://api.openai.com/v1'}).AI_MODEL,'gpt-4o-mini');
+ assert.equal(resolveAIConfig({AI_MODEL:'chosen-project-model'}).AI_MODEL,'chosen-project-model');
 });

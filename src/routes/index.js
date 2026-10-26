@@ -40,6 +40,7 @@ add('post','/auth/logout','Invalidate this token session',all,z.object({}).stric
 add('post','/auth/change-password','Change password and revoke all sessions',all,z.object({currentPassword:v.passwordInput,newPassword:v.password}).strict(),r=>auth.changePassword(r.actor,r.validated.body));
 add('get','/organization','Organization settings and configuration',staff,null,r=>org.getOrganization(r.actor));
 add('put','/organization','Schedule new company policy version',['Admin'],z.object({name:v.text.optional(),effectiveDate:v.date,policy:v.policy}).strict(),r=>org.changeOrganization(r.actor,r.validated.body));
+add('post','/organization/departments/configure','Configure the six supported departments without deleting records',['Admin'],z.object({}).strict(),r=>org.configureDepartments(r.actor));
 add('post','/organization/units','Create department or designation',['Admin'],z.object({kind:z.enum(['department','designation']),name:v.text,active:z.boolean().default(true)}).strict(),r=>org.saveUnit(r.actor,null,r.validated.body));
 add('patch','/organization/units/:id','Edit or deactivate configuration',['Admin'],z.object({name:v.text.optional(),active:z.boolean().optional()}).strict(),r=>org.saveUnit(r.actor,r.params.id,r.validated.body));
 add('delete','/organization/units/:id','Delete unreferenced configuration',['Admin'],null,r=>org.deleteUnit(r.actor,r.params.id));

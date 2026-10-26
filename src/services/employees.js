@@ -7,8 +7,12 @@ import { temporaryPassword, publicUser } from './auth.js';
 import { assert, AppError } from '../utils/errors.js';
 import { today, currentPolicy, statusFor } from '../utils/dates.js';
 import { employee as employeeSchema } from '../validators/index.js';
+import { departmentName } from '../utils/departments.js';
 async function checkUnits(input,session) {
-  for(const [field,kind] of [['departmentId','department'],['designationId','designation']]) if(input[field] && !await OrgUnit.exists({ _id:input[field],kind,active:true }).session(session || null)) throw new AppError(422,`Unknown or inactive ${kind}`,[{field,reason:`Unknown or inactive ${kind}`}]);
+  for(const [field,kind] of [['departmentId','department'],['designationId','designation']]) if(input[field]) {
+    const unit=await OrgUnit.findOne({_id:input[field],kind,active:true}).select('name').session(session||null);
+    if(!unit || (kind==='department'&&!departmentName(unit.name))) throw new AppError(422,'Choose a supported active '+kind,[{field,reason:kind==='department'?'Choose one of the six configured active departments.':'Unknown or inactive designation'}]);
+  }
 }
 async function insertEmployee(actor,input,session,linkedUser) {
   await checkUnits(input,session);
@@ -61,8 +65,8 @@ export async function listEmployees(actor,f) {
   return {items:data.map(e=>({...e,status:statusFor(e,date)})),total,page:f.page,limit:f.limit};
 }
 export async function employee360(actor,id) {
-  const e=await scopeEmployee(actor,id); const [attendance,leaves,runs]=await Promise.all([Attendance.find({employeeId:e._id}).sort({date:-1}).limit(31),Leave.find({employeeId:e._id}).sort({createdAt:-1}).limit(20),Payroll.find({state:'finalized','slips.employeeId':String(e._id)}).sort({month:-1}).limit(12)]);
-  return {employee:e,attendance,leaves,payslips:runs.map(r=>({runId:r._id,month:r.month,state:r.state,...r.slips.find(s=>s.employeeId===String(e._id))}))};
+  const e=await scopeEmployee(actor,id); const [attendance,leaves,runs,units,c]=await Promise.all([Attendance.find({employeeId:e._id}).sort({date:-1}).limit(31).lean(),Leave.find({employeeId:e._id}).sort({createdAt:-1}).limit(20).lean(),Payroll.find({state:'finalized','slips.employeeId':String(e._id)}).select({month:1,state:1,slips:{$elemMatch:{employeeId:String(e._id)}}}).sort({month:-1}).limit(12).lean(),OrgUnit.find({_id:{$in:[e.departmentId,e.designationId]}}).select('name kind active').lean(),company()]);
+  return {employee:e,timezone:currentPolicy(c).timezone,job:{departmentName:units.find(unit=>String(unit._id)===String(e.departmentId))?.name||null,designationName:units.find(unit=>String(unit._id)===String(e.designationId))?.name||null},attendance,leaves,payslips:runs.map(r=>({runId:r._id,month:r.month,state:r.state,...r.slips.find(s=>s.employeeId===String(e._id))}))};
 }
 export async function importCSV(actor,csv,dryRun) {
   roles(actor,'HR'); let rows;

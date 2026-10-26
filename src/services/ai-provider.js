@@ -1,6 +1,12 @@
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
+export function resolveAIConfig(values) {
+  const base=values.AI_BASE_URL?.trim() || GEMINI_BASE_URL;
+  const model=values.AI_MODEL?.trim() || (new URL(base).hostname==='generativelanguage.googleapis.com'?GEMINI_MODEL:'gpt-4o-mini');
+  return {AI_API_KEY:values.AI_API_KEY?.trim() || undefined,AI_BASE_URL:base,AI_MODEL:model};
+}
+
 export class AIProviderError extends Error {
   constructor(code, message, status) { super(message); this.name='AIProviderError'; this.code=code; this.status=status; }
 }

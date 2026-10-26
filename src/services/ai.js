@@ -11,7 +11,17 @@ import { assert } from '../utils/errors.js';
 import { providerCompletion } from './ai-provider.js';
 const tools=['get_headcount','get_attendance_summary','get_late_comers','get_leave_summary','get_my_leave_balance','get_payroll_summary','search_employees'];
 const toolArgs=z.object({from:z.string().optional(),to:z.string().optional(),departmentId:z.string().optional(),search:z.string().optional(),year:z.number().int().optional()}).strict();
-const toolDefinitions=tools.map(name=>({type:'function',function:{name,description:`Read authorized live HCM data: ${name}. Never modifies data. Dates are ISO YYYY-MM-DD.`,parameters:{type:'object',properties:{from:{type:'string'},to:{type:'string'},departmentId:{type:'string'},search:{type:'string'},year:{type:'integer'}},additionalProperties:false}}}));
+const toolInfo={
+  get_headcount:{description:'Count active/probation employees at the end date, optionally in a department. Resolve department names with the provided workspace unit IDs.',fields:['from','to','departmentId']},
+  get_attendance_summary:{description:'Read attendance counts, attendance rate and trend for the authorized scope and date range.',fields:['from','to','departmentId']},
+  get_late_comers:{description:'Read the top late arrivals in the date range, optionally filtered by department.',fields:['from','to','departmentId']},
+  get_leave_summary:{description:'Read approved leave days and named approved requests, including who is on leave for a date range. Defaults to today.',fields:['from','to','departmentId']},
+  get_my_leave_balance:{description:'Read the signed-in person’s own remaining leave by type and year. Requires their own linked employee profile.',fields:['year']},
+  get_payroll_summary:{description:'Read saved finalized gross/net payroll totals by month and department. Staff only.',fields:['from','to','departmentId']},
+  search_employees:{description:'Find employees by case-insensitive starting letters of name, code or email; use departmentId for a department lookup. Staff only.',fields:['search','departmentId']},
+};
+const toolProperties={from:{type:'string',description:'Start date YYYY-MM-DD'},to:{type:'string',description:'End date YYYY-MM-DD'},departmentId:{type:'string',description:'Actual department ID from workspace units'},search:{type:'string',description:'Literal name/code/email prefix'},year:{type:'integer',description:'Four-digit leave allocation year'}};
+const toolDefinitions=tools.map(name=>({type:'function',function:{name,description:toolInfo[name].description+' Read-only; never modifies data.',parameters:{type:'object',properties:Object.fromEntries(toolInfo[name].fields.map(field=>[field,toolProperties[field]])),additionalProperties:false}}}));
 export async function runTool(actor,name,args) {
   assert(tools.includes(name),403,'Tool unavailable');
   const f=filters.parse(toolArgs.parse(args));
@@ -35,7 +45,7 @@ const summarySchema=z.object({bullets:z.array(z.string().trim().min(1).max(1000)
 const summaryFormat={type:'json_schema',json_schema:{name:'dashboard_summary',strict:true,schema:{type:'object',properties:{bullets:{type:'array',items:{type:'string'},minItems:3,maxItems:5}},required:['bullets'],additionalProperties:false}}};
 const leaveFormat={type:'json_schema',json_schema:{name:'leave_proposal',strict:true,schema:{type:'object',properties:{type:{type:'string'},start:{type:'string'},end:{type:'string'},reason:{type:'string'}},required:['type','start','end','reason'],additionalProperties:false}}};
 export async function aiRequest(actor,kind,input) {
-  const started=Date.now(),called=[],controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000); let outcome='fallback';
+  const started=Date.now(),called=[],attempted=[],controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000); let outcome='fallback';
   try {
     const c=await company(),p=currentPolicy(c);
     const units=actor.role==='Employee'?[]:await OrgUnit.find().select('name kind active').lean();
@@ -62,11 +72,12 @@ export async function aiRequest(actor,kind,input) {
       if(!output.tool_calls?.length) { outcome='success';return {label:'AI-generated',answer:output.content||'I could not answer that question.',toolsUsed:called}; }
       assert(output.tool_calls.length<=8,422,'Too many tool calls'); messages.push(output);
       for(const call of output.tool_calls) {
-        let result; try {result=await runTool(actor,call.function.name,JSON.parse(call.function.arguments));} catch {result={error:'Tool unavailable, invalid arguments, or access denied. Do not infer any private data.'};}
-        called.push(call.function.name);messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
+        attempted.push(call.function?.name || 'invalid_tool');
+        let result; try {result=await runTool(actor,call.function.name,JSON.parse(call.function.arguments));called.push(call.function.name);} catch {result={error:'Tool unavailable, invalid arguments, or access denied. Do not infer any private data.'};}
+        messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(result)});
       }
     }
     return {label:'AI-generated',fallback:true,message:'Please narrow your question or use the dashboards.'};
   } catch {return {label:'AI-generated',fallback:true,message:'The AI assistant is temporarily unavailable. Your data is safe; please use the normal forms and dashboards.'};}
-  finally {clearTimeout(timer);await AiLog.create({userId:actor._id,kind,outcome,tools:called,durationMs:Date.now()-started});}
+  finally {clearTimeout(timer);await AiLog.create({userId:actor._id,kind,outcome,tools:attempted,durationMs:Date.now()-started});}
 }
