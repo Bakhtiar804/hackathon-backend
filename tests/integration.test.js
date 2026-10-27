@@ -79,7 +79,16 @@ test('HCM Lite integration against isolated transactional MongoDB', {timeout:240
     assert.equal((await call('get','/organization',employee)).status,403);
     assert.equal((await call('patch','/employees/me',employee,{basicSalary:999999})).status,422);
     assert.equal((await call('patch','/employees/me',employee,{name:'Changed'})).status,403);
-    assert.equal((await call('patch','/employees/me',employee,{phone:'123',address:'Home'})).status,200);
+    assert.equal((await call('patch','/employees/me',employee,{phone:'123',address:'Home'})).status,403);
+    assert.equal((await call('patch','/auth/profile',employee,{currentPassword:'wrong-password',phone:'no'})).status,403);
+    assert.notEqual((await call('get','/auth/profile',employee)).body.data.employee.phone,'no');
+    assert.equal((await call('get','/auth/me',employee)).status,200);
+    assert.equal((await call('patch','/auth/profile',employee,{currentPassword:password,displayName:'My display',phone:'123',address:'Home'})).status,200);
+    assert.equal((await call('get','/auth/profile',employee)).body.data.employee.phone,'123');
+    assert.equal((await call('get','/auth/me',employee)).body.data.displayName,'My display');
+    assert.equal((await call('patch','/auth/profile',employee,{currentPassword:password,email:'hijack@example.com'})).status,422);
+    assert.equal((await call('patch','/auth/profile',admin,{currentPassword:password,displayName:'Admin Name'})).status,200);
+    assert.equal((await call('get','/auth/profile',admin)).body.data.employee,null);
     assert.equal((await call('get','/employees?search=Test&limit=1',hr)).body.data.items.length,1);
     assert.equal((await call('get','/employees?search=test',hr)).body.data.total,3);
     assert.equal((await call('get','/employees?search=Person',hr)).body.data.total,0);

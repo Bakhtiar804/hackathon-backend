@@ -16,7 +16,7 @@ const policy = new Schema({ effectiveDate: String, timezone: String, officeStart
 const companySchema = new Schema({ _id: { type: String, default: 'singleton' }, slug: String, name: String, policies: [policy], lock: { type: Number, default: 0 }, revision: { type: Number, default: 0 } }, opts);
 companySchema.index({ slug: 1 }, { unique: true, partialFilterExpression: { slug: { $type: 'string' } } });
 export const Company = mongoose.model('Company', companySchema);
-export const User = mongoose.model('User', scoped({ email: { type: String, required: true, trim: true, lowercase: true }, passwordHash: { type: String, select: false }, role: { type: String, enum: ['Admin','HR','Employee'] }, active: { type: Boolean, default: true }, mustChangePassword: { type: Boolean, default: true }, tokenVersion: { type: Number, default: 0 }, employeeId: objectId }, opts));
+export const User = mongoose.model('User', scoped({ displayName: {type:String,default:''}, email: { type: String, required: true, trim: true, lowercase: true }, passwordHash: { type: String, select: false }, role: { type: String, enum: ['Admin','HR','Employee'] }, active: { type: Boolean, default: true }, mustChangePassword: { type: Boolean, default: true }, tokenVersion: { type: Number, default: 0 }, employeeId: objectId }, opts));
 export const Session = mongoose.model('Session', scoped({ _id: String, userId: objectId, expiresAt: { type: Date, index: { expires: 0 } } }, opts));
 const configSchema = scoped({ kind: { type: String, enum: ['department','designation'] }, name: String, active: { type: Boolean, default: true } }, opts);
 configSchema.index({ workspaceId: 1, kind: 1, name: 1 }, { unique: true });

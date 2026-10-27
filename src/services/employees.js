@@ -32,7 +32,8 @@ export async function linkHR(actor,userId,input) {
 export async function editEmployee(actor,id,input) {
   return transaction(async session=> {
     const e=await scopeEmployee(actor,id,session); const before=e.toObject();
-    if(actor.role==='Employee') assert(Object.keys(input).every(k=>['phone','address'].includes(k)),403,'Only phone and address are editable');
+    assert(String(e.userId)!==String(actor._id),403,'Use password-confirmed account profile updates for your own contact details');
+    if(actor.role==='Employee') assert(false,403,'Use password-confirmed account profile updates');
     else roles(actor,'HR');
     await checkUnits(input,session);
     const c=await company(session); const now=today(currentPolicy(c).timezone);

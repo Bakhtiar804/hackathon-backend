@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { Company, User, Session, OrgUnit } from '../models/index.js';
+import { Company, User, Session, OrgUnit, Employee } from '../models/index.js';
 import { env } from '../config/env.js';
 import { assert, AppError } from '../utils/errors.js';
 import { transaction, audit, roles } from './common.js';
@@ -11,10 +11,11 @@ import { policy as policySchema } from '../validators/index.js';
 import { normalizeEmail } from '../utils/email.js';
 import { currentPolicy } from '../utils/dates.js';
 export const temporaryPassword = () => randomBytes(18).toString('base64url');
-export const publicUser = u => ({ id:u._id, workspaceId:u.workspaceId, email:u.email, role:u.role, active:u.active, mustChangePassword:u.mustChangePassword, employeeId:u.employeeId });
+export const publicUser = u => ({ id:u._id, workspaceId:u.workspaceId, email:u.email, displayName:u.displayName || '', role:u.role, active:u.active, mustChangePassword:u.mustChangePassword, employeeId:u.employeeId });
 export async function sessionUser(user, session = null) {
-  const c = await Company.findById(workspaceId()).session(session);
-  const units = await OrgUnit.find().select('kind name active').session(session).lean();
+  const readCompany=()=>Company.findById(workspaceId()).session(session).lean();
+  const readUnits=()=>OrgUnit.find().select('kind name active').session(session).lean();
+  const [c,units] = session ? [await readCompany(),await readUnits()] : await Promise.all([readCompany(),readUnits()]);
   const policies = (c?.policies || []).map(p => ({ effectiveDate:p.effectiveDate, timezone:p.timezone, officeStart:p.officeStart, officeEnd:p.officeEnd, graceMinutes:p.graceMinutes, halfDayHours:p.halfDayHours, weekendDays:p.weekendDays, leaveTypes:p.leaveTypes, holidays:p.holidays }));
   return { ...publicUser(user), workspace:c ? { id:c._id, slug:c.slug, name:c.name, timezone:currentPolicy(c).timezone, policies, units } : null };
 }
@@ -121,3 +122,28 @@ export async function manageUser(actor,id,action) {
 
 
 
+
+export async function ownProfile(actor) {
+  const user=await User.findById(actor._id);
+  const employee=actor.employeeId?await Employee.findOne({_id:actor.employeeId,userId:actor._id}).select('name phone address code').lean():null;
+  return {user:publicUser(user),employee};
+}
+export async function updateOwnProfile(actor,input) {
+  return transaction(async session=>{
+    const u=await User.findById(actor._id).select('+passwordHash').session(session);
+    assert(u && await bcrypt.compare(input.currentPassword,u.passwordHash),403,'Current password is incorrect');
+    const before={displayName:u.displayName||''};
+    if(input.displayName!==undefined) u.displayName=input.displayName;
+    if(input.phone!==undefined || input.address!==undefined) {
+      assert(u.employeeId,422,'Contact details require a linked employee profile');
+      const e=await Employee.findOne({_id:u.employeeId,userId:u._id}).session(session);
+      assert(e,404,'Employee profile not found');
+      if(input.phone!==undefined)e.phone=input.phone;
+      if(input.address!==undefined)e.address=input.address;
+      await e.save({session});
+    }
+    await u.save({session});
+    await audit(actor,'profile_updated','User',u._id,before,{displayName:u.displayName||''},session);
+    return {user:publicUser(u)};
+  },{business:false});
+}

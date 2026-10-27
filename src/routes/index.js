@@ -36,6 +36,10 @@ add('post','/setup','Create company and first Admin atomically','public',v.setup
 add('post','/auth/login','Login and obtain an 8-hour JWT','public',z.object({email:v.email,password:v.passwordInput,workspaceSlug:v.workspaceSlug.optional()}).strict(),r=>auth.login(r.validated.body));
 router.use(authenticate);
 add('get','/auth/me','Current authenticated user',all,null,r=>auth.sessionUser(r.actor));
+const profileLimiter=rateLimit({windowMs:15*60000,limit:10,skipSuccessfulRequests:true,keyGenerator:r=>String(r.actor._id),standardHeaders:'draft-8',legacyHeaders:false,message:{success:false,message:'Too many password attempts; try again later'}});
+router.use('/auth/profile',profileLimiter);
+add('get','/auth/profile','Read own account and contact profile',all,null,r=>auth.ownProfile(r.actor));
+add('patch','/auth/profile','Update own profile after password verification',all,z.object({currentPassword:v.passwordInput,displayName:z.string().trim().min(1).max(100).optional(),phone:z.string().trim().max(50).optional(),address:z.string().trim().max(1000).optional()}).strict(),r=>auth.updateOwnProfile(r.actor,r.validated.body));
 add('post','/auth/logout','Invalidate this token session',all,z.object({}).strict(),async r=>{await Session.deleteOne({_id:r.sessionId,userId:r.actor._id});return {loggedOut:true};});
 add('post','/auth/change-password','Change password and revoke all sessions',all,z.object({currentPassword:v.passwordInput,newPassword:v.password}).strict(),r=>auth.changePassword(r.actor,r.validated.body));
 add('get','/organization','Organization settings and configuration',staff,null,r=>org.getOrganization(r.actor));
